@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<!-- 
+source: https://gist.github.com/tanmaykm/5111225 
+-->
+<html>
+  <head>
+        <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+
+		<title>學生 - 軟體工程期未作業<</title>
+		<style>
+		    body {
+            background-color: lightblue;
+            }
+			#messages {
+				border: dotted 1px #444444;
+				font: 12px arial,sans-serif;
+			}
+			
+			#messages > p {
+				padding: 0px;
+				margin: 0px;
+			}
+		</style>        
+		<script>
+            
+            //===================================================
+			function log_msg(msg) {
+				var p = document.createElement("p");
+				p.innerHTML = msg;
+				messages.appendChild(p);
+			}
+            
+			var s; //socket object for connection
+            // 學生狀態代碼 
+            //    A: 等待送出 Login
+            //    B: Login 送出, 等待教師回應
+            //    C: 等待教師送出問題
+            //    D: 教師已送出問題, 等待學生搶答
+            //    E: 送出搶答, 等待教師回應     
+            //    F: 搶答成功, 等待送出回答結果 
+            //    G: 搶答不成功或沒有送出搶答, 等待搶答成功學生回答
+            //    H: 送出回答結果, 等待教師回應     
+            //    I: 結束
+            const states = { 
+                     A: "等待送出 Login",
+                     B: "Login 送出, 等待教師回應",
+                     C: "等待教師送出問題",
+                     D: "教師已送出問題, 等待學生搶答",                     
+                     E: "送出搶答, 等待教師回應",
+                     F: "搶答成功, 等待送出回答結果",
+                     G: "搶答不成功或沒有送出搶答, 等待搶答成功學生回答",
+                     H: "送出回答結果, 等待教師回應",   
+                     I: "結束" } ;
+           
+            var studentid ;
+            var current_state = "A" ;
+            
+			function doInit() {
+                // 初始化
+                document.getElementById('question').value = "" ;
+                // 隱藏搶答按鈕
+                var raiseHandDiv = document.getElementById("raiseHandDiv");
+                raiseHandDiv.style.display = "none";
+                // 隱藏回答欄位
+                var responseDiv = document.getElementById("responseDiv");
+                responseDiv.style.display = "none"; 
+                // 隱藏搶答學生學號欄位
+                var ansStudentIdDiv = document.getElementById("ansStudentIdDiv");
+                ansStudentIdDiv.style.display = "none";   // 隱藏搶答學生學號欄位         
+                // 我的成績
+                var scoreDiv = document.getElementById("scoreDiv");
+                scoreDiv.innerHTML = "0" ;            
+                
+				try {
+					let host = "ws://10.99.1.135:4545/"; //設定socker server的ip:port
+					/*if(window.location.hostname) {
+						host = "ws://" + window.location.hostname + ":4545/";
+					}*/
+
+					s = new WebSocket(host); //建立socket元件
+					//設定幾個主要事件
+					s.onopen = function (e) { log_msg("connected..."); };
+					s.onclose = function (e) { log_msg("connection closed."); };
+					s.onerror = function (e) { log_msg("connection error."); };
+					
+					//當server送訊息來時
+					s.onmessage = function (e) {
+                        if( current_state == "I" ) {
+                          // 判斷遊戲已經結束
+                          return ;
+                        }  
+                        
+						let strs = e.data.split('###');
+                        
+						log_msg(strs);
+                        
+						//========================================================================
+						
+                        switch(strs[0]) {
+                          case "TL":
+                            // TL: 老師回應 Login 成功
+                            if( studentid == strs[1] ){
+                              document.getElementById("studentid").readOnly = true; // 學號欄位鎖定不准修改
+                              loginDiv.style.display = "none"; // 隱藏 Login 按鈕
+                              current_state = "C" ; //C 等待教師送出問題
+                            }                               
+                            break ;  
+                            
+                          case "TQ":
+                            // TQ: 老師送出題目
+                            document.getElementById('question').value = strs[1] ;
+							document.getElementById('response').value = "" ;
+                            raiseHandDiv.style.display = "block";   // 打開搶答按鈕
+                            responseDiv.style.display = "none";     // 隱藏回答欄位
+                            ansStudentIdDiv.style.display = "none";   // 隱藏搶答學生學號欄位  
+                            current_state = "D" ; // D: 教師已送出問題, 等待學生搶答                           
+                            break ;
+                            
+                          case "TC":
+                            // TC: 老師清除題目
+                            document.getElementById('question').value = "" ;
+							document.getElementById('response').value = "" ;
+                            raiseHandDiv.style.display = "none";  // 隱藏搶答按鈕
+                            responseDiv.style.display = "none";   // 隱藏回答欄位
+                            ansStudentIdDiv.style.display = "none";   // 隱藏搶答學生學號欄位                              
+                            current_state = "C" ; // C: 等待教師送出問題                           
+                            break ;                            
+                            
+                          case "TH":
+                            // TH: 搶答成功
+                            if( studentid == strs[1] ){
+                              raiseHandDiv.style.display = "none";  // 隱藏搶答按鈕
+                              responseDiv.style.display = "block";  // 打開回答欄位
+                              current_state = "F" ; // C: 搶答成功, 等待送出回答結果
+                            }
+                            else {
+                              raiseHandDiv.style.display = "none";  // 隱藏搶答按鈕
+                              responseDiv.style.display = "none";   // 隱藏回答欄位
+                              current_state = "G" ; // 搶答不成功或沒有送出搶答, 等待搶答成功學生回答                              
+                            }
+                            
+                            ansStudentIdDiv.style.display = "block";   // 打開搶答學生學號欄位
+                            document.getElementById('ansStudentID').value = strs[1] ; // 填入搶答學生學號 
+                            break ;
+                            
+                          case "TA":
+                            // TA: 回答正確
+						    document.getElementById('question').value = "" ;
+							document.getElementById('response').value = "" ;							
+                            if( studentid == strs[1] ){
+                              raiseHandDiv.style.display = "none";  // 隱藏搶答按鈕
+                              responseDiv.style.display = "none";   // 隱藏回答欄位
+                              scoreDiv.innerHTML = strs[2] ; // 更新現在累積成績
+                            } 
+                            
+                            ansStudentIdDiv.style.display = "none";   // 隱藏搶答學生學號欄位                            
+                            current_state = "C" ; // 等待教師送出問題
+                            break ;
+
+                          case "TN":
+                            // TN: 回答不正確, 重新回到搶答狀態
+							document.getElementById('response').value = "" ;							
+                            raiseHandDiv.style.display = "block";  // 打開搶答按鈕
+                            responseDiv.style.display = "none";   // 隱藏回答欄位
+                            ansStudentIdDiv.style.display = "none";   // 隱藏搶答學生學號欄位                              
+                            current_state = "D" ; // 等待學生搶答
+                            break ;  
+
+                          case "TS":
+                            // TS: 老師送出全部學生成績
+                            document.getElementById('allStudentScoreDiv').innerHTML = strs[1] ; 
+                            break ; 
+                            
+                          case "TE":
+                            // TE: 老師結束, 送出全部學生成績
+                            document.getElementById('allStudentScoreDiv').innerHTML = strs[1] ;  
+                            document.getElementById('question').value = "搶答遊戲結束 !!!" ;
+                            current_state = "I" ; // 結束
+                            s.close() ;
+                            
+                        }
+                        
+                        document.getElementById('current_state').innerHTML = current_state + " " + states[ current_state ] ;
+
+					};
+				} catch (ex) {
+					log_msg("connection exception:" + ex);
+				}
+			}
+			
+			function sendLogin() {
+                // 送出 Login
+				studentid = document.getElementById('studentid').value;
+                if( studentid == "" ){
+                   alert( "請在 [我的學號] 欄位, 填寫您的學號 !!!" ) ;
+                   return ;
+                }
+				s.send("SL###" +  studentid + "###" );     
+                current_state = "B" ; // Login 送出, 等待教師回應     
+                document.getElementById('current_state').innerHTML = current_state + " " + states[ current_state ] ;                
+			}            
+            
+			function sendResponse() {
+                // 送出回答結果
+				response = document.getElementById('response').value;
+				studentid = document.getElementById('studentid').value;                
+				s.send("SR###" +  studentid + "###" + response);
+                current_state = "H" ; //送出回答結果, 等待教師回應
+                document.getElementById('current_state').innerHTML = current_state + " " + states[ current_state ] ;
+			}
+            
+			function sendRaiseHand() {
+                // 我要搶答✋
+				studentid = document.getElementById('studentid').value;                
+				s.send("SH###" +  studentid );
+                current_stat = "E" ; // 送出搶答, 等待教師回應 
+                document.getElementById('current_state').innerHTML = current_state + " " + states[ current_state ] ;
+			}            
+		</script>		
+	</head>
+<body onload="doInit()">
+        <h2>
+		題目:<input type="text" id="question" readonly style="background-color:khaki;" value="" ><br /><br />  
+        <div id="ansStudentIdDiv" >
+        搶答學生學號:<input type="text" id="ansStudentID" readonly style="background-color:papaya whip;" ><br /><br /> 
+        </div>
+        全部學生名單成績:<div id="allStudentScoreDiv"></div><br /><br />
+        
+        </h2>
+        
+        角色:學生<br />  
+        目前狀態: <div id="current_state"></div><br><br>
+        
+        我的學號:<input type="text" id="studentid"><br /> 
+        我的累積分數:<div id="scoreDiv"></div><br /><br />
+
+
+        <div id="loginDiv" >
+		<button onclick="sendLogin()">登入註冊</button>    
+        </div>
+        
+        <div id="raiseHandDiv" >
+		<button onclick="sendRaiseHand()">我要搶答✋</button>    
+        </div>
+        
+        <div id="responseDiv" >
+		我的回答:<input type="text" id="response"><br />
+		<button onclick="sendResponse()">送出回答結果</button>    
+        </div>
+        
+	<br/>
+	<div id="messages"></div> 
+</body>
+</html>

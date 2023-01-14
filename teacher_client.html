@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<!-- 
+source: https://gist.github.com/tanmaykm/5111225 
+-->
+<html>
+  <head>
+        <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+		<title>教師 - 軟體工程期未作業</title>
+		<style>
+		    body {
+            background-color: lightblue;
+            }
+			#messages {
+				border: dotted 1px #444444;
+				font: 12px arial,sans-serif;
+			}
+			
+			#messages > p {
+				padding: 0px;
+				margin: 0px;
+			}
+		</style>		
+		<script>
+			function log_msg(msg) {
+				var p = document.createElement("p");
+				p.innerHTML = msg;
+				messages.appendChild(p);
+			}
+			var s; //socket object for connection
+            
+            // 教師狀態代碼 
+            //    A: 等待送出題目或結束
+            //    B: 已送出題目, 等待學生送出搶答按鈕
+            //    C: 學生搶答成功, 等待學生送出答案,
+            //    D: 結束
+            const states = { 
+                     A: "等待送出題目或結束遊戲",
+                     B: "已送出題目, 等待學生送出搶答按鈕",
+                     C: "學生搶答成功, 等待學生送出答案 ",
+                     D: "結束" } ;
+                     
+            var current_state = "A" ;
+            var ans_studentid ;
+            var question ;
+            var answer ;
+            const student_score = {}; // 記錄學生成績
+            
+			function doInit() {
+                document.getElementById('current_state').innerHTML = current_state + " " + states[ current_state ] ;
+                document.getElementById('question').value = "" ;
+                document.getElementById('answer').value = "" ;					
+                document.getElementById('ans_studentid').innerHTML = "" ;
+				document.getElementById('students_score').innerHTML = "" ;
+				
+				try {
+					let host = "ws://10.99.1.135:4545/"; //設定socker server的ip:port
+					/*if(window.location.hostname) {
+						host = "ws://" + window.location.hostname + ":4545/";
+					}*/
+
+					s = new WebSocket(host); //建立socket元件
+					//設定幾個主要事件
+					s.onopen = function (e) { log_msg("connected..."); };
+					s.onclose = function (e) { log_msg("connection closed."); };
+					s.onerror = function (e) { log_msg("connection error."); };
+					
+					//當server送訊息來時
+					s.onmessage = function (e) {
+						let strs = e.data.split('###');
+                        
+						log_msg(strs);
+						
+						//========================================================================
+                        switch(strs[0]) {
+                          case "SL":
+                            // 學生送出 Login 按鈕
+                            s.send("TL###" + strs[1]); // 回應 login 成功
+                            if( !(strs[1] in student_score) )
+                              student_score[ strs[1] ] = 0 ;
+                            break ;  
+                            
+                          case "SH":
+                            // 學生送出搶答按鈕
+                            if( current_state == "B" ){
+                              ans_studentid = strs[1] ;
+                              s.send("TH###" + ans_studentid);
+                              document.getElementById('ans_studentid').innerHTML = ans_studentid ;
+                              current_state = "C" ;
+                            }   
+                            break ;
+                            
+                          case "SR":  
+                            // 學生送出回答
+                            if( current_state == "C" && 
+                                ans_studentid == strs[1] ) {
+                              if( answer == strs[2] ){
+                                // 答對給分
+                                if( ans_studentid in student_score )
+                                  student_score[ ans_studentid ]++ ; // 加一分                                                                 
+                                else
+                                  student_score[ ans_studentid ] = 1 ; // 第一次得分                                
+
+                                s.send("TA###" + ans_studentid + "###" + student_score[ ans_studentid ]); //student_score[ ans_studentid ]目前累積的分數
+								
+                                // 回到出題狀態, 並清除題目及答案
+                                current_state = "A" ;
+                                document.getElementById('ans_studentid').innerHTML = "" ;
+                                document.getElementById('question').value = "" ;
+                                document.getElementById('answer').value = "" ;								
+                              }
+                              else {
+                                // 答錯
+                                s.send("TN###" + ans_studentid + "###") ;
+                              }                              
+                              
+
+                            }                                                            
+                            break ;                            
+                        }
+                        
+                        document.getElementById('current_state').innerHTML = current_state + " " + states[ current_state ] ;
+                        document.getElementById('students_score').innerHTML = JSON.stringify( student_score ) ;
+					};
+				} catch (ex) {
+					log_msg("connection exception:" + ex);
+				}
+			}
+			
+			function sendQuestion() {
+                // 送出題目
+				question= document.getElementById('question').value;
+				answer = document.getElementById('answer').value;
+                if( question == "" || answer == "" ) {
+                    alert( "題目及答案不能是空白 !!!" ) ;
+                    return ;
+                }
+                
+				s.send("TQ###" + question);
+                current_state = "B" ;
+                document.getElementById('current_state').innerHTML = current_state + " " + states[ current_state ] ;
+                document.getElementById('ans_studentid').innerHTML = "" ;
+			}
+            
+			function sendClearQuestion() {
+                // 清除題目, 回到等待送出題目或結束
+				s.send("TC###" );
+                current_state = "A" ;
+                document.getElementById('ans_studentid').innerHTML = "" ;                
+				document.getElementById('question').value = "";
+				document.getElementById('answer').value = "" ;                
+                
+                document.getElementById('current_state').innerHTML = current_state + " " + states[ current_state ] ;
+                document.getElementById('ans_studentid').innerHTML = "" ;
+			}            
+            
+			function sendScore() {
+                // 送出全部學生成績
+				s.send("TS###" + JSON.stringify( student_score ) );
+			}
+            
+			function sendEndMsg() {
+                // 結束, 送出全部學生成績
+				s.send("TE###" + JSON.stringify( student_score ) );
+                current_state = "D" ;
+                document.getElementById('current_state').innerHTML = current_state + " " + states[ current_state ] ;;
+                document.getElementById('ans_studentid').innerHTML = "" ;
+                s.close() ;
+			}            
+		</script>		
+	</head>
+<body onload="doInit()">
+        角色:出題老師<br /> 
+        目前狀態: <div id="current_state"></div><br>
+        等待回答學生: <div id="ans_studentid"></div><br><br>
+        
+		題目:<input type="text" id="question" value=""><br />
+		答案:<input type="text" id="answer" value=""><br />
+		<button onclick="sendQuestion()">送出題目</button>
+		<button onclick="sendClearQuestion()">清除目前題目</button>        
+		<button onclick="sendScore()">送出全部成績</button>        
+		<button onclick="sendEndMsg()">結束遊戲</button>
+        
+	<br/>
+    <hr>
+    <div id="students_score"></div>    
+    <hr>
+	<div id="messages"></div> 
+</body>
+</html>
